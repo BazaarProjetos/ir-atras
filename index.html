@@ -526,6 +526,7 @@ cargaPasso(5, 'Abrindo o app');
           ⬆ Selecionar CSV USA (extra)
           <input type="file" accept=".csv" style="display:none" onchange="processarCSVUSA2(this)">
         </label>
+        <div id="csv-status-usa2" style="font-size:11px;color:#b08070;margin-top:8px"></div>
         <div style="font-size:10px;color:var(--text4);margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.5px">Sincronização automática desta fonte</div>
         <div style="margin-bottom:8px">
           <div style="font-size:11px;color:var(--text4);margin-bottom:4px">ID da planilha (USA extra)</div>
@@ -6618,9 +6619,10 @@ function processarCSVUSA(input, origemTag) {
     if (window._db) window._db.collection('config').doc('app').set({['mesLabel_'+origemTag]: novoLabelUsa}, {merge:true});
     if (inpLabelUsa) { inpLabelUsa.value = ''; inpLabelUsa.placeholder = novoLabelUsa; }
   }
+  const _stId = origemTag === 'usa2' ? 'csv-status-usa2' : 'csv-status';
   document.getElementById('csv-progress').style.display = '';
   document.getElementById('csv-fill').style.width = '30%';
-  (document.getElementById('csv-status')||{}).textContent = 'Lendo arquivo...';
+  (document.getElementById(_stId)||{}).textContent = 'Lendo arquivo...';
   const reader = new FileReader();
   reader.onload = e => {
     try {
@@ -6924,7 +6926,7 @@ function processarCSVUSA(input, origemTag) {
       });
       const duplicatas = Object.entries(nomeCount).filter(([,arr]) => arr.length > 1);
       if (duplicatas.length > 0) {
-        const statusEl = document.getElementById('csv-status');
+        const statusEl = document.getElementById(_stId);
         const dupMsg = duplicatas.slice(0,3).map(([n,arr]) => arr[0].substring(0,30)).join(', ');
         if (statusEl) statusEl.innerHTML += '<br><span style="color:#d97706">⚠️ ' + duplicatas.length + ' possíveis duplicatas: ' + dupMsg + (duplicatas.length>3?'...':'') + '</span>';
       }
@@ -6938,9 +6940,9 @@ function processarCSVUSA(input, origemTag) {
         atualizarVersaoHeader();
         document.getElementById('csv-fill').style.width = '100%';
         setTimeout(() => { document.getElementById('csv-progress').style.display='none'; }, 3000);
-      });
+      }, { planilhaTemLinhas: rows.slice(headerIdx+1).some(r => (r[iItem]||'').trim()) });
     } catch(err) {
-      (document.getElementById('csv-status')||{}).textContent = '❌ Erro: ' + err.message;
+      (document.getElementById(_stId)||{}).textContent = '❌ Erro: ' + err.message;
     }
   };
   reader.onerror = () => {
@@ -7015,24 +7017,24 @@ function soltarTravaSync() {
   try { window._db.collection('config').doc('sync_lock').set({ dono: '', ts: 0 }).catch(() => {}); } catch (e) {}
 }
 let _filaSalvar = Promise.resolve();
-function salvarOrigemNoFirebase(newData, origem, onDone) {
+function salvarOrigemNoFirebase(newData, origem, onDone, opcoes) {
   _filaSalvar = _filaSalvar.then(() => new Promise(resolve => {
     let liberado = false;
     const liberar = () => { if (!liberado) { liberado = true; clearTimeout(tmo); resolve(); } };
     const tmo = setTimeout(liberar, 600000); // trava de segurança: nunca prende a fila pra sempre
-    try { _salvarOrigemImpl(newData, origem, onDone, liberar); }
+    try { _salvarOrigemImpl(newData, origem, onDone, liberar, opcoes); }
     catch (e) { console.error('Erro ao salvar ' + origem, e); liberar(); }
   }));
   return _filaSalvar;
 }
 
 // Apaga só os produtos da origem informada e salva os novos, sem mexer na outra origem
-function _salvarOrigemImpl(newData, origem, onDone, liberar) {
+function _salvarOrigemImpl(newData, origem, onDone, liberar, opcoes) {
   const liberarFila = liberar || (() => {});
   let temTrava = false;
   liberar = () => { if (temTrava) { temTrava = false; soltarTravaSync(); } liberarFila(); };
   let statusBackup = {};
-  const statusId = origem === 'br' ? 'csv-status-br' : 'csv-status';
+  const statusId = origem === 'br' ? 'csv-status-br' : (origem === 'usa2' ? 'csv-status-usa2' : 'csv-status');
   const setStatus = (msg) => { const el = document.getElementById(statusId); if (el) el.textContent = msg; };
   if (!window._db) {
     // Sem Firebase: atualiza local mesmo assim
@@ -7068,8 +7070,10 @@ function _salvarOrigemImpl(newData, origem, onDone, liberar) {
     docsAntigos = snap.docs.filter(doc => (doc.data().origem || 'usa') === origem);
     snap.forEach(doc => { const n = parseInt(doc.id); if (!isNaN(n) && n > maxIdGlobal) maxIdGlobal = n; });
     // Proteção: planilha vazia (aba errada, planilha carregando...) NUNCA pode apagar o catálogo
-    if (!newData.length) {
-      throw new Error('a planilha veio com 0 produtos — mantive os produtos antigos (' + docsAntigos.length + ') sem apagar nada');
+    // Planilha COMPLETAMENTE vazia (nenhuma linha de item) nunca apaga o catálogo. Já uma planilha
+    // com itens mas sem nenhum faltante (tudo entregue, ou mês novo) é legítima e limpa a origem.
+    if (!newData.length && !(opcoes && opcoes.planilhaTemLinhas)) {
+      throw new Error('a planilha veio vazia (sem nenhuma linha de item) — mantive os produtos antigos (' + docsAntigos.length + ') sem apagar nada');
     }
     return window._db.collection('faltantes').get();
   }).then(snap => {
@@ -7516,7 +7520,7 @@ function processarCSVBR(input) {
         atualizarVersaoHeader();
         localStorage.setItem('ultima_atualizacao_br', now);
         setTimeout(() => { if (progEl) progEl.style.display='none'; }, 3000);
-      });
+      }, { planilhaTemLinhas: rows.slice(headerIdx+1).some(r => (r[iItem]||'').trim()) });
     } catch(err) {
       if (statusEl) statusEl.textContent = '❌ Erro: ' + err.message;
     }
