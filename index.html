@@ -4318,11 +4318,31 @@ async function toggleMetaDolar() {
   renderMeta();
 }
 
+// Mês PRINCIPAL = planilha USA do mês · EXTRA = planilha "USA extra". Cada um guarda os seus próprios
+// dados (metas, resumo de vendas e relatório); o extra NUNCA sobrescreve o principal.
+function relatorioFonte() { return localStorage.getItem('relatorio_fonte') === 'extra' ? 'extra' : 'principal'; }
+function chaveMeta(base) { return base + (relatorioFonte() === 'extra' ? '_usa2' : ''); }
+function lerRelatorio() {
+  try { return JSON.parse(localStorage.getItem(chaveMeta('relatorio_vendas')) || 'null'); } catch (e) { return null; }
+}
+function rotuloRelatorio() {
+  return relatorioFonte() === 'extra' ? (localStorage.getItem('mes_label_usa2') || 'USA extra') : (localStorage.getItem('mes_label_usa') || 'Mês principal');
+}
+function setRelatorioFonte(f) { localStorage.setItem('relatorio_fonte', f === 'extra' ? 'extra' : 'principal'); renderMeta(); }
+function htmlSeletorRelatorio() {
+  const tem = k => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return Array.isArray(v) ? v.length > 0 : !!v && (typeof v !== 'object' || Object.keys(v).length > 0); } catch (e) { return false; } };
+  const temExtra = tem('relatorio_vendas_usa2') || tem('meta_vendedoras_usa2') || tem('vendas_resumo_usa2');
+  if (!temExtra) return ''; // só mostra o seletor quando existem dados do mês extra
+  const f = relatorioFonte();
+  const chip = (id, txt) => `<button onclick="setRelatorioFonte('${id}')" class="chip${f === id ? ' active' : ''}" style="font-size:11px;padding:5px 12px">${txt}</button>`;
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Mês</span>${chip('principal', '📅 ' + (localStorage.getItem('mes_label_usa') || 'Mês principal'))}${chip('extra', '➕ ' + (localStorage.getItem('mes_label_usa2') || 'USA extra'))}</div>`;
+}
+
 function renderMeta() {
   const container = document.getElementById('meta-content');
   if (!container) return;
   let data;
-  try { data = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) { data=[]; }
+  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) { data=[]; }
   if (!data.length) {
     container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#c4a898;font-size:13px">Importe a planilha USA para ver as metas</div>';
     return;
@@ -4344,8 +4364,7 @@ function renderMeta() {
   const cores = ['#7a0b1e','#f59e0b','#0f6b52','#6366f1','#783c18','#ea580c'];
 
   // Dados do relatório de vendas
-  let relatorio = null;
-  try { relatorio = JSON.parse(localStorage.getItem('relatorio_vendas')||'null'); } catch(e) {}
+  const relatorio = lerRelatorio();
 
   // Calcular % atingido de cada vendedora
   const vendedoras = data.map((v,i) => ({
@@ -4397,7 +4416,7 @@ function renderMeta() {
 
   // Faltantes = Total - OKS direto da planilha (igual à planilha)
   let _metaFalt = [];
-  try { _metaFalt = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { _metaFalt = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   const faltantesApp = {};
   _metaFalt.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -4444,7 +4463,7 @@ function renderMeta() {
     };
     budgetHtml = `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">% Budget</div>
+        <div style="font-size:11px;color:var(--text4);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">% Budget · ${rotuloRelatorio()}</div>
         <div style="font-size:18px;font-weight:800;color:${budCor}">${budEmoji} ${fmtPct(bud)}</div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:0.5px solid var(--border)">
@@ -4547,6 +4566,7 @@ function renderMeta() {
         <tbody>${linhas}</tbody>
       </table>
     </div>
+    ${htmlSeletorRelatorio()}
     ${budgetHtml}
     ${categoriaTicketHtml}
     <div id="selecao-vend-pdf" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
@@ -4574,7 +4594,7 @@ function renderMeta() {
 
   // --- Cards mobile por vendedora ---
   let vendasResumo = {};
-  try { vendasResumo = JSON.parse(localStorage.getItem('vendas_resumo')||'{}'); } catch(e) {}
+  try { vendasResumo = JSON.parse(localStorage.getItem(chaveMeta('vendas_resumo'))||'{}'); } catch(e) {}
 
   const barCores = [
     {fill:'#b8860b', text:'#7a5c00', medal:'🥇'},
@@ -4690,7 +4710,7 @@ function abrirSelecaoVendedoraPdf() {
   document.getElementById('selecao-vend-wpp').style.display = 'none';
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
   let data = [];
-  try { data = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   lista.innerHTML = data.map(v => `<button onclick="gerarPdfMeta('${v.nome}');document.getElementById('selecao-vend-pdf').style.display='none'" style="padding:10px 14px;border-radius:10px;background:var(--bg);border:0.5px solid var(--border);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left">${v.nome.charAt(0)+v.nome.slice(1).toLowerCase()}</button>`).join('');
   el.style.display = 'block';
 }
@@ -4701,24 +4721,23 @@ function abrirSelecaoVendedoraWpp() {
   document.getElementById('selecao-vend-pdf').style.display = 'none';
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
   let data = [];
-  try { data = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   lista.innerHTML = data.map(v => `<button onclick="enviarWppMeta('${v.nome}');document.getElementById('selecao-vend-wpp').style.display='none'" style="padding:10px 14px;border-radius:10px;background:var(--bg);border:0.5px solid var(--border);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left">${v.nome.charAt(0)+v.nome.slice(1).toLowerCase()}</button>`).join('');
   el.style.display = 'block';
 }
 
 function construirHtmlMeta(filtroVend) {
   let metaData = [];
-  try { metaData = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { metaData = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   let vendasResumo = {};
-  try { vendasResumo = JSON.parse(localStorage.getItem('vendas_resumo')||'{}'); } catch(e) {}
-  let relatorio = null;
-  try { relatorio = JSON.parse(localStorage.getItem('relatorio_vendas')||'null'); } catch(e) {}
+  try { vendasResumo = JSON.parse(localStorage.getItem(chaveMeta('vendas_resumo'))||'{}'); } catch(e) {}
+  const relatorio = lerRelatorio();
   const mes = localStorage.getItem('mes_label_usa') || 'Relatório';
   const fmt = v => 'R$ ' + (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtBud = v => (v >= 0 ? '+' : '') + v.toFixed(2).replace('.',',') + '%';
 
   let _metaFalt2 = [];
-  try { _metaFalt2 = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { _metaFalt2 = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   const faltantesApp = {};
   _metaFalt2.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -4910,10 +4929,9 @@ function gerarPdfMeta(filtroVend) {
 }
 
 function enviarWppMeta(filtroVend) {
-  let relatorioWpp = null;
-  try { relatorioWpp = JSON.parse(localStorage.getItem('relatorio_vendas')||'null'); } catch(e) {}
+  const relatorioWpp = lerRelatorio();
   let metaData = [];
-  try { metaData = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { metaData = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   const mes = localStorage.getItem('mes_label_usa') || 'Mês USA';
   const fmt = v => 'R$' + (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtUsdWpp = v => {
@@ -4928,7 +4946,7 @@ function enviarWppMeta(filtroVend) {
   };
 
   let _metaFalt2 = [];
-  try { _metaFalt2 = JSON.parse(localStorage.getItem('meta_vendedoras')||'[]'); } catch(e) {}
+  try { _metaFalt2 = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
   const faltantesApp = {};
   _metaFalt2.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -4936,7 +4954,7 @@ function enviarWppMeta(filtroVend) {
 
   const lista = filtroVend === 'todas' ? metaData : metaData.filter(v => normalizarVendedora(v.nome) === normalizarVendedora(filtroVend));
   let vendasResumo = {};
-  try { vendasResumo = JSON.parse(localStorage.getItem('vendas_resumo')||'{}'); } catch(e) {}
+  try { vendasResumo = JSON.parse(localStorage.getItem(chaveMeta('vendas_resumo'))||'{}'); } catch(e) {}
 
   let texto = `📊 *Relatório Bazaar — ${mes}*
 
@@ -5418,6 +5436,9 @@ function fbListen() {
   const p2 = carregarMapaFotos('fotos_br', '_fotoMapBr', 'foto_map_br');
   const p3 = window._db.collection('config').doc('relatorio').get().then(doc => {
     if (doc.exists && doc.data().dados) localStorage.setItem('relatorio_vendas', doc.data().dados);
+    return window._db.collection('config').doc('relatorio_usa2').get();
+  }).then(doc => {
+    if (doc && doc.exists && doc.data().dados) localStorage.setItem('relatorio_vendas_usa2', doc.data().dados);
   }).catch(()=>{});
   const p4 = window._db.collection('config').doc('import_ts').get().then(doc => {
     if (doc.exists) {
@@ -5494,6 +5515,8 @@ function _fbListenCore() {
       if (data.vendas_resumo) {
         localStorage.setItem('vendas_resumo', data.vendas_resumo);
       }
+      if (data.meta_vendedoras_usa2) localStorage.setItem('meta_vendedoras_usa2', data.meta_vendedoras_usa2);
+      if (data.vendas_resumo_usa2) localStorage.setItem('vendas_resumo_usa2', data.vendas_resumo_usa2);
     }
   });
   fbUnsub = window._db.collection('faltantes').onSnapshot(snap => {
@@ -6463,7 +6486,7 @@ async function sincronizarAutomaticamente(manual) {
   const _hashTexto = (t) => { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return t.length + ':' + h; };
   const puladas = [];
   // esperarSalvar = origem ('usa' | 'usa2' | 'br') quando a aba é de produtos
-  async function baixarAba(idPlanilha, nomeAba, nomeArquivo, callback, esperarSalvar) {
+  async function baixarAba(idPlanilha, nomeAba, nomeArquivo, callback, esperarSalvar, opcional) {
     if (!nomeAba || !idPlanilha) return;
     try {
       const url = baseUrl + '?senha=' + encodeURIComponent(SYNC_SENHA) + '&planilhaId=' + encodeURIComponent(idPlanilha) + '&aba=' + encodeURIComponent(nomeAba);
@@ -6501,6 +6524,7 @@ async function sincronizarAutomaticamente(manual) {
         else localStorage.removeItem('sync_hash_' + nomeArquivo);
       }
     } catch (err) {
+      if (opcional) { console.warn('Aba opcional indisponível (' + nomeArquivo + '):', err.message); return; }
       algumErro = true;
       errosDetalhados.push(nomeArquivo + ': ' + err.message);
       console.error('Erro sincronizando ' + nomeArquivo + ':', err.message);
@@ -6514,7 +6538,11 @@ async function sincronizarAutomaticamente(manual) {
   await baixarAba(planilhaIdBr || planilhaId, abas.br, 'br.csv', processarCSVBR, 'br');
   await baixarAba(planilhaId, abas.fotosUsa, 'fotos-usa.csv', (inp) => handleFotos(inp, 'usa'));
   await baixarAba(planilhaIdBr || planilhaId, abas.fotosBr, 'fotos-br.csv', (inp) => handleFotos(inp, 'br'));
-  await baixarAba(planilhaId, abas.relatorio, 'relatorio.csv', processarCSVRelatorio);
+  // Relatório de vendas: SÓ das planilhas USA (nunca a BR). Mês principal + (se ativada) a USA extra.
+  await baixarAba(planilhaId, abas.relatorio, 'relatorio.csv', (inp) => processarCSVRelatorio(inp, 'principal'));
+  if (localStorage.getItem('sync_usa2Ativo') === '1' && planilhaIdUsa2 && planilhaIdUsa2 !== planilhaId) {
+    await baixarAba(planilhaIdUsa2, abas.relatorio, 'relatorio-usa2.csv', (inp) => processarCSVRelatorio(inp, 'extra'), null, true);
+  }
   await baixarAba(planilhaIdPrazos, abas.prazos, 'prazos.csv', (inp) => processarCSVPrazos(inp, abas.prazos));
 
   await _filaSalvar;
@@ -6671,12 +6699,14 @@ function processarCSVUSA(input, origemTag) {
         }
       }
       if (metaVendedoras.length > 0) {
-        localStorage.setItem('meta_vendedoras', JSON.stringify(metaVendedoras));
-        localStorage.setItem('resumo_planilha', JSON.stringify(resumoVals));
+        // A planilha "USA extra" grava nas chaves *_usa2 — nunca sobrescreve o mês principal.
+        const sfxMeta = origemTag === 'usa2' ? '_usa2' : '';
+        localStorage.setItem('meta_vendedoras' + sfxMeta, JSON.stringify(metaVendedoras));
+        localStorage.setItem('resumo_planilha' + sfxMeta, JSON.stringify(resumoVals));
         if (window._db) {
           window._db.collection('config').doc('app').set({
-            meta_vendedoras: JSON.stringify(metaVendedoras),
-            resumo_planilha: JSON.stringify(resumoVals)
+            ['meta_vendedoras' + sfxMeta]: JSON.stringify(metaVendedoras),
+            ['resumo_planilha' + sfxMeta]: JSON.stringify(resumoVals)
           }, {merge: true});
         }
         renderMeta();
@@ -6761,9 +6791,10 @@ function processarCSVUSA(input, origemTag) {
         });
         vendasResumoFinal[vend] = {top3marcas, periodos:vr.periodos, marcasPorTurno, diaMais};
       });
-      localStorage.setItem('vendas_resumo', JSON.stringify(vendasResumoFinal));
+      const sfxVendas = origemTag === 'usa2' ? '_usa2' : '';
+      localStorage.setItem('vendas_resumo' + sfxVendas, JSON.stringify(vendasResumoFinal));
       if (window._db) {
-        window._db.collection('config').doc('app').set({vendas_resumo: JSON.stringify(vendasResumoFinal)}, {merge:true});
+        window._db.collection('config').doc('app').set({['vendas_resumo' + sfxVendas]: JSON.stringify(vendasResumoFinal)}, {merge:true});
       }
       // Registrar importação no histórico de versões
       const importTs = new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -6958,12 +6989,37 @@ function toggleUsa2Ativo(ligado) {
 
 // Fila: USA e BR nunca salvam ao mesmo tempo (antes se atropelavam: IDs repetidos,
 // backup de status misturado e um lado sobrescrevendo o outro).
+// Trava entre COMPUTADORES: dois PCs com sincronização automática ligada importando ao mesmo
+// tempo era a causa mais provável de itens duplicados (cada um apagava/gravava no meio do outro).
+const _syncDono = Math.random().toString(36).slice(2) + '-' + Date.now();
+function adquirirTravaSync(setStatus) {
+  const ref = window._db.collection('config').doc('sync_lock');
+  const tentar = (n) => window._db.runTransaction(tx => tx.get(ref).then(d => {
+    const dt = d.exists ? d.data() : null;
+    const livre = !dt || !dt.dono || dt.dono === _syncDono || (Date.now() - (dt.ts || 0)) > 4 * 60 * 1000;
+    if (livre) tx.set(ref, { dono: _syncDono, ts: Date.now() });
+    return livre;
+  })).then(ok => {
+    if (ok) return true;
+    if (n >= 30) throw new Error('outro computador está sincronizando há muito tempo — tente de novo em alguns minutos');
+    setStatus('⏳ Outro computador está sincronizando, aguardando...');
+    return new Promise(r => setTimeout(r, 10000)).then(() => tentar(n + 1));
+  });
+  return tentar(0).catch(e => {
+    if (/outro computador/.test(e.message)) throw e;   // espera esgotada: não importa
+    console.warn('Trava de sincronização indisponível, seguindo sem ela:', e.message);
+    return false;                                       // erro técnico (regra/rede): segue sem trava
+  });
+}
+function soltarTravaSync() {
+  try { window._db.collection('config').doc('sync_lock').set({ dono: '', ts: 0 }).catch(() => {}); } catch (e) {}
+}
 let _filaSalvar = Promise.resolve();
 function salvarOrigemNoFirebase(newData, origem, onDone) {
   _filaSalvar = _filaSalvar.then(() => new Promise(resolve => {
     let liberado = false;
     const liberar = () => { if (!liberado) { liberado = true; clearTimeout(tmo); resolve(); } };
-    const tmo = setTimeout(liberar, 180000); // trava de segurança: nunca prende a fila pra sempre
+    const tmo = setTimeout(liberar, 600000); // trava de segurança: nunca prende a fila pra sempre
     try { _salvarOrigemImpl(newData, origem, onDone, liberar); }
     catch (e) { console.error('Erro ao salvar ' + origem, e); liberar(); }
   }));
@@ -6972,7 +7028,9 @@ function salvarOrigemNoFirebase(newData, origem, onDone) {
 
 // Apaga só os produtos da origem informada e salva os novos, sem mexer na outra origem
 function _salvarOrigemImpl(newData, origem, onDone, liberar) {
-  liberar = liberar || (() => {});
+  const liberarFila = liberar || (() => {});
+  let temTrava = false;
+  liberar = () => { if (temTrava) { temTrava = false; soltarTravaSync(); } liberarFila(); };
   let statusBackup = {};
   const statusId = origem === 'br' ? 'csv-status-br' : 'csv-status';
   const setStatus = (msg) => { const el = document.getElementById(statusId); if (el) el.textContent = msg; };
@@ -7003,7 +7061,10 @@ function _salvarOrigemImpl(newData, origem, onDone, liberar) {
   };
   let docsAntigos = [], docsFaltantesAntigos = [], maxIdGlobal = -1;
   setStatus('📥 Lendo o catálogo atual (' + origem.toUpperCase() + ')...');
-  window._db.collection('catalogo').get({source: 'server'}).then(snap => {
+  adquirirTravaSync(setStatus).then(ok => {
+    temTrava = !!ok;
+    return window._db.collection('catalogo').get({source: 'server'});
+  }).then(snap => {
     docsAntigos = snap.docs.filter(doc => (doc.data().origem || 'usa') === origem);
     snap.forEach(doc => { const n = parseInt(doc.id); if (!isNaN(n) && n > maxIdGlobal) maxIdGlobal = n; });
     // Proteção: planilha vazia (aba errada, planilha carregando...) NUNCA pode apagar o catálogo
@@ -7050,9 +7111,13 @@ function _salvarOrigemImpl(newData, origem, onDone, liberar) {
       return batch.commit();
     }), Promise.resolve());
   }).then(() => {
-    // Só agora que os novos estão salvos é que os antigos saem
-    setStatus('🧹 Removendo ' + docsAntigos.length + ' produto(s) antigo(s) (' + origem.toUpperCase() + ')...');
-    return apagarEmLotes(docsAntigos);
+    // Só agora que os novos estão salvos é que os antigos saem. Relê o catálogo e apaga TUDO desta
+    // origem que não seja do import atual (pega também sobras de importações que falharam antes).
+    setStatus('🧹 Removendo produtos antigos (' + origem.toUpperCase() + ')...');
+    return window._db.collection('catalogo').get({source: 'server'}).then(snap2 => {
+      const sobras = snap2.docs.filter(doc => (doc.data().origem || 'usa') === origem && parseInt(doc.id) <= maxIdGlobal);
+      return apagarEmLotes(sobras);
+    });
   }).then(() => {
     return apagarEmLotes(docsFaltantesAntigos);
   }).then(() => {
@@ -7130,7 +7195,8 @@ function _salvarOrigemImpl(newData, origem, onDone, liberar) {
   });
 }
 
-function processarCSVRelatorio(input) {
+function processarCSVRelatorio(input, fonte) {
+  fonte = fonte === 'extra' ? 'extra' : 'principal';
   const file = input.files[0];
   if (!file) return;
   const status = document.getElementById('relatorio-status');
@@ -7238,9 +7304,9 @@ function processarCSVRelatorio(input) {
       }
     }
 
-    localStorage.setItem('relatorio_vendas', JSON.stringify(dados));
-    if (window._db) window._db.collection('config').doc('relatorio').set({dados: JSON.stringify(dados), updatedAt: new Date().toISOString()});
-    if (status) status.textContent = '✅ Relatório importado com sucesso!';
+    localStorage.setItem(fonte === 'extra' ? 'relatorio_vendas_usa2' : 'relatorio_vendas', JSON.stringify(dados));
+    if (window._db) window._db.collection('config').doc(fonte === 'extra' ? 'relatorio_usa2' : 'relatorio').set({dados: JSON.stringify(dados), updatedAt: new Date().toISOString()});
+    if (status) status.textContent = '✅ Relatório importado com sucesso!' + (fonte === 'extra' ? ' (USA extra)' : '');
     renderMeta();
   };
   reader.readAsText(file);
