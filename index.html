@@ -7069,12 +7069,9 @@ function _salvarOrigemImpl(newData, origem, onDone, liberar, opcoes) {
   }).then(snap => {
     docsAntigos = snap.docs.filter(doc => (doc.data().origem || 'usa') === origem);
     snap.forEach(doc => { const n = parseInt(doc.id); if (!isNaN(n) && n > maxIdGlobal) maxIdGlobal = n; });
-    // Proteção: planilha vazia (aba errada, planilha carregando...) NUNCA pode apagar o catálogo
-    // Planilha COMPLETAMENTE vazia (nenhuma linha de item) nunca apaga o catálogo. Já uma planilha
-    // com itens mas sem nenhum faltante (tudo entregue, ou mês novo) é legítima e limpa a origem.
-    if (!newData.length && !(opcoes && opcoes.planilhaTemLinhas)) {
-      throw new Error('a planilha veio vazia (sem nenhuma linha de item) — mantive os produtos antigos (' + docsAntigos.length + ') sem apagar nada');
-    }
+    // Aba sem nenhum item (mês novo, ainda sem faltantes) é um estado normal: a origem fica
+    // vazia e os itens só aparecem quando entrarem na planilha. (Aba inexistente, cabeçalho
+    // ausente ou falha de download já são barrados antes, com erro, e não chegam aqui.)
     return window._db.collection('faltantes').get();
   }).then(snap => {
     // Guarda os status ativos (em_compra, nok, est_eua, est_br, comentários) por nome+marca
