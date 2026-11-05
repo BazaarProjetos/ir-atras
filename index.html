@@ -4321,10 +4321,28 @@ async function toggleMetaDolar() {
 
 // Mês PRINCIPAL = planilha USA do mês · EXTRA = planilha "USA extra". Cada um guarda os seus próprios
 // dados (metas, resumo de vendas e relatório); o extra NUNCA sobrescreve o principal.
-function relatorioFonte() { return localStorage.getItem('relatorio_fonte') === 'extra' ? 'extra' : 'principal'; }
+// O mês "extra" só vale quando a USA extra está LIGADA nas configurações; desligada, a Meta mostra só o mês principal.
+function usa2Ligado() { return localStorage.getItem('sync_usa2Ativo') === '1'; }
+function relatorioFonte() { return (usa2Ligado() && localStorage.getItem('relatorio_fonte') === 'extra') ? 'extra' : 'principal'; }
 function chaveMeta(base) { return base + (relatorioFonte() === 'extra' ? '_usa2' : ''); }
 function lerRelatorio() {
   try { return JSON.parse(localStorage.getItem(chaveMeta('relatorio_vendas')) || 'null'); } catch (e) { return null; }
+}
+// Metas por vendedora: se o relatório de vendas do mesmo mês tem a "Meta" de cada vendedora, usa ela
+// (é onde vocês mudam as metas); senão, usa a da aba EUA como antes.
+function lerMetaVendedoras() {
+  let d = [];
+  try { d = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras')) || '[]'); } catch (e) { d = []; }
+  try {
+    const rel = lerRelatorio();
+    if (rel && rel.vendedoras) {
+      const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+      const mapa = {};
+      Object.keys(rel.vendedoras).forEach(k => { const m = rel.vendedoras[k] && rel.vendedoras[k].meta; if (m > 0) mapa[norm(k)] = m; });
+      d = d.map(v => (mapa[norm(v.nome)] > 0) ? Object.assign({}, v, { meta: mapa[norm(v.nome)] }) : v);
+    }
+  } catch (e) {}
+  return d;
 }
 function rotuloRelatorio() {
   return relatorioFonte() === 'extra' ? (localStorage.getItem('mes_label_usa2') || 'USA extra') : (localStorage.getItem('mes_label_usa') || 'Mês principal');
@@ -4333,7 +4351,7 @@ function setRelatorioFonte(f) { localStorage.setItem('relatorio_fonte', f === 'e
 function htmlSeletorRelatorio() {
   const tem = k => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return Array.isArray(v) ? v.length > 0 : !!v && (typeof v !== 'object' || Object.keys(v).length > 0); } catch (e) { return false; } };
   const temExtra = tem('relatorio_vendas_usa2') || tem('meta_vendedoras_usa2') || tem('vendas_resumo_usa2');
-  if (!temExtra) return ''; // só mostra o seletor quando existem dados do mês extra
+  if (!usa2Ligado() || !temExtra) return ''; // só mostra o seletor quando existem dados do mês extra
   const f = relatorioFonte();
   const chip = (id, txt) => `<button onclick="setRelatorioFonte('${id}')" class="chip${f === id ? ' active' : ''}" style="font-size:11px;padding:5px 12px">${txt}</button>`;
   return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Mês</span>${chip('principal', '📅 ' + (localStorage.getItem('mes_label_usa') || 'Mês principal'))}${chip('extra', '➕ ' + (localStorage.getItem('mes_label_usa2') || 'USA extra'))}</div>`;
@@ -4343,7 +4361,7 @@ function renderMeta() {
   const container = document.getElementById('meta-content');
   if (!container) return;
   let data;
-  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) { data=[]; }
+  try { data = lerMetaVendedoras(); } catch(e) { data=[]; }
   if (!data.length) {
     container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#c4a898;font-size:13px">Importe a planilha USA para ver as metas</div>';
     return;
@@ -4417,7 +4435,7 @@ function renderMeta() {
 
   // Faltantes = Total - OKS direto da planilha (igual à planilha)
   let _metaFalt = [];
-  try { _metaFalt = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { _metaFalt = lerMetaVendedoras(); } catch(e) {}
   const faltantesApp = {};
   _metaFalt.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -4711,7 +4729,7 @@ function abrirSelecaoVendedoraPdf() {
   document.getElementById('selecao-vend-wpp').style.display = 'none';
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
   let data = [];
-  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { data = lerMetaVendedoras(); } catch(e) {}
   lista.innerHTML = data.map(v => `<button onclick="gerarPdfMeta('${v.nome}');document.getElementById('selecao-vend-pdf').style.display='none'" style="padding:10px 14px;border-radius:10px;background:var(--bg);border:0.5px solid var(--border);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left">${v.nome.charAt(0)+v.nome.slice(1).toLowerCase()}</button>`).join('');
   el.style.display = 'block';
 }
@@ -4722,14 +4740,14 @@ function abrirSelecaoVendedoraWpp() {
   document.getElementById('selecao-vend-pdf').style.display = 'none';
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
   let data = [];
-  try { data = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { data = lerMetaVendedoras(); } catch(e) {}
   lista.innerHTML = data.map(v => `<button onclick="enviarWppMeta('${v.nome}');document.getElementById('selecao-vend-wpp').style.display='none'" style="padding:10px 14px;border-radius:10px;background:var(--bg);border:0.5px solid var(--border);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left">${v.nome.charAt(0)+v.nome.slice(1).toLowerCase()}</button>`).join('');
   el.style.display = 'block';
 }
 
 function construirHtmlMeta(filtroVend) {
   let metaData = [];
-  try { metaData = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { metaData = lerMetaVendedoras(); } catch(e) {}
   let vendasResumo = {};
   try { vendasResumo = JSON.parse(localStorage.getItem(chaveMeta('vendas_resumo'))||'{}'); } catch(e) {}
   const relatorio = lerRelatorio();
@@ -4738,7 +4756,7 @@ function construirHtmlMeta(filtroVend) {
   const fmtBud = v => (v >= 0 ? '+' : '') + v.toFixed(2).replace('.',',') + '%';
 
   let _metaFalt2 = [];
-  try { _metaFalt2 = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { _metaFalt2 = lerMetaVendedoras(); } catch(e) {}
   const faltantesApp = {};
   _metaFalt2.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -4932,7 +4950,7 @@ function gerarPdfMeta(filtroVend) {
 function enviarWppMeta(filtroVend) {
   const relatorioWpp = lerRelatorio();
   let metaData = [];
-  try { metaData = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { metaData = lerMetaVendedoras(); } catch(e) {}
   const mes = localStorage.getItem('mes_label_usa') || 'Mês USA';
   const fmt = v => 'R$' + (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtUsdWpp = v => {
@@ -4947,7 +4965,7 @@ function enviarWppMeta(filtroVend) {
   };
 
   let _metaFalt2 = [];
-  try { _metaFalt2 = JSON.parse(localStorage.getItem(chaveMeta('meta_vendedoras'))||'[]'); } catch(e) {}
+  try { _metaFalt2 = lerMetaVendedoras(); } catch(e) {}
   const faltantesApp = {};
   _metaFalt2.forEach(v => {
     faltantesApp[normalizarVendedora(v.nome)] = v.faltantes !== undefined ? v.faltantes : Math.max(0,(v.total||0)-(v.oks||0));
@@ -6965,6 +6983,7 @@ function toggleUsa2Ativo(ligado) {
   const secao = document.getElementById('secao-usa2');
   if (chip) chip.style.display = ligado ? '' : 'none';
   if (secao) secao.style.display = ligado ? '' : 'none';
+  try { renderMeta(); } catch (e) {}
   if (!ligado) {
     if (fOrigem === 'usa2') setOrigem('', document.getElementById('chip-origem-todos'));
     if (window._db) {
